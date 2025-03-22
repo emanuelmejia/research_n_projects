@@ -140,4 +140,8 @@ docs/
 po/*~
 
 # R Project file
-*.Rproj
+*.RprojLICENSE
+assignment.Rmd
+assignment.html
+rubric.md
+src/
