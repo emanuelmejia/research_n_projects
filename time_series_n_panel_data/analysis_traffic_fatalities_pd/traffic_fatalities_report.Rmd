@@ -1,0 +1,1633 @@
+---
+title: 'Lab 3: Panel Models'
+subtitle: 'US Traffic Fatalities: 1980 - 2004'
+author: 'Violet Davis, Yuri Kinakin, W. Sean McFetridge and Emanuel Mejia'
+output: 
+  bookdown::pdf_document2: default
+---
+
+```{r load packages, echo=FALSE, message=FALSE}
+library(tidyverse)
+library(plm)
+library(stargazer)
+library(dplyr)
+library(kableExtra)
+library(ggcorrplot)
+library(patchwork)
+library(mgcv)
+library(fredr)
+```
+
+
+# U.S. traffic fatalities: 1980-2004
+
+In this lab, we are asking you to answer the following **causal** question: 
+
+> **"Do changes in traffic laws affect traffic fatalities?"**  
+
+To answer this question, please complete the tasks specified below using the data provided in `data/driving.Rdata`. This data includes 25 years of data that cover changes in various state drunk driving, seat belt, and speed limit laws. 
+
+Specifically, this data set contains data for the 48 continental U.S. states from 1980 through 2004. Various driving laws are indicated in the data set, such as the alcohol level at which drivers are considered legally intoxicated. There are also indicators for “per se” laws—where licenses can be revoked without a trial—and seat belt laws. A few economics and demographic variables are also included. The description of the each of the variables in the dataset is also provided in the dataset. 
+
+```{r load data, echo = TRUE}
+load(file="./data/driving.RData")
+
+## please comment these calls in your work 
+# glimpse(data)
+# desc
+# 
+# head(desc)
+```
+
+# (30 points, total) Build and Describe the Data 
+
+1. (5 points) Load the data and produce useful features. Specifically: 
+
+- Produce a new variable, called `speed_limit` that re-encodes the data that is in `sl55`, `sl65`, `sl70`, `sl75`, and `slnone`; 
+    
+```{r re-encode speed limit}
+data_cleaned <- data %>%
+  mutate(speed_limit = case_when(sl55 > 0.5 ~ '55', #Higher than 0.5 as 55
+                                 sl65 >= 0.5 ~ '60', #Higher than 0.5 as 60 overriding any prior value
+                                 sl70 >= 0.5 ~ '65', #Higher than 0.5 as 65 overriding any prior value
+                                 sl75 >= 0.5 ~ '70', #Higher than 0.5 as 70 overriding any prior value
+                                 slnone > 0.5 ~ NA)) #Higher than 0.5 as NA
+
+data_cleaned <- data_cleaned %>%
+  dplyr::select(-c("sl55", "sl65", "sl70", "sl75", "slnone")) #Drop columns
+
+data_cleaned$speed_limit <- as.numeric(data_cleaned$speed_limit) #sets to numeric
+```
+
+
+- Produce a new variable, called `year_of_observation` that re-encodes the data that is in `d80`, `d81`, ... , `d04`.
+    
+```{r re-encode year}
+data_cleaned <- data_cleaned %>% 
+       dplyr::rename("year_of_observation" = "year") #sets year as year_of_observation
+
+data_cleaned <- data_cleaned[-c(which(colnames(data_cleaned)=="d80"):which(colnames(data_cleaned)=="d04"))] #deletes columns
+
+data_cleaned$year_of_observation <- as.factor(data_cleaned$year_of_observation) #sets as a factor
+```
+
+- Produce a new variable for each of the other variables that are one-hot encoded (i.e. `bac*` variable series).
+
+```{r}
+data_cleaned <- data_cleaned %>%
+  mutate(blood_alcohol_level = case_when(bac08 >= 0.5 ~ '8',
+                                         bac10 >= 0.5 ~ '10',
+                                         TRUE ~ 'None')) #Remainder are none
+
+data_cleaned <- data_cleaned %>%
+  dplyr::select(-c("bac08", "bac10")) #drops columns
+
+data_cleaned$blood_alcohol_level <- as.factor(data_cleaned$blood_alcohol_level) #sets as a factor
+```
+
+- Rename these variables to sensible names that are legible to a reader of your analysis. For example, the dependent variable as provided is called, `totfatrte`. Pick something more sensible, like, `total_fatalities_rate`. There are few enough of these variables to change, that you should change them for all the variables in the data. (You will thank yourself later.)
+
+```{r renaming cols}
+col_name_lookup <- c(
+  "min_drinking_age" = "minage",
+  "zero_tol_law" = "zerotol",
+  "grad_driver_law" = "gdl",
+  "per_se_law" = "perse",
+  "total_fatalities" = "totfat",
+  "night_fatalities" = "nghtfat",
+  "weekend_fatalities" = "wkndfat",
+  "total_fatalities_per_100mil_miles" = "totfatpvm",
+  "night_fatalities_per_100mil_miles" = "nghtfatpvm",
+  "weekend_fatalities_per_100mil_miles" = "wkndfatpvm",
+  "state_population" = "statepop",
+  "total_fatalities_rate" = "totfatrte",
+  "night_fatalities_rate" = "nghtfatrte",
+  "weekend_fatalities_rate" = "wkndfatrte",
+  "vehicle_miles" = "vehicmiles",
+  "unemployment_rate" = "unem",
+  "percent_age_14_24" = "perc14_24",
+  "speed_limit_70_or_higher" = "sl70plus",
+  "primary_seatbelt" = "sbprim",
+  "secondary_seatbelt" = "sbsecon",
+  "vehicle_miles_per_capita"="vehicmilespc"
+  )
+
+data_cleaned <- data_cleaned %>% 
+  dplyr::rename(any_of(col_name_lookup))
+```
+
+```{r}
+#Adjusting factor variables to binary
+data_cleaned <- data_cleaned %>%
+  mutate(zero_tol_law = case_when(zero_tol_law >= 0.5 ~ '1',
+                                  zero_tol_law < 0.5 ~ '0')) 
+
+data_cleaned <- data_cleaned %>%
+  mutate(grad_driver_law = case_when(grad_driver_law >= 0.5 ~ '1',
+                                     grad_driver_law < 0.5 ~ '0'))
+
+data_cleaned <- data_cleaned %>%
+  mutate(per_se_law = case_when(per_se_law >= 0.5 ~ '1',
+                                per_se_law < 0.5 ~ '0'))
+
+data_cleaned <- data_cleaned %>%
+  mutate(speed_limit_70_or_higher = case_when(speed_limit_70_or_higher >= 0.5 ~ '1',
+                                speed_limit_70_or_higher < 0.5 ~ '0'))
+```
+
+```{r creating pdata}
+pdriving <- pdata.frame(
+  data_cleaned, 
+  index=c("state", "year_of_observation")
+  )
+
+pdim(pdriving)
+
+# Renaming States
+replacement_state <- c("AL", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", 
+                       "GA", "ID", "IL", "IN", "IA", "KS", "KY", "LA", 
+                       "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", 
+                       "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", 
+                       "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", 
+                       "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY")
+
+levels(pdriving$state) <- replacement_state
+
+replacement_region <- c(
+  "south", "southwest", "south", "west", "west", "northeast", "northeast", "south", "south",
+  "west", "midwest", "midwest", "midwest", "midwest", "south", "south", "northeast", "northeast", 
+  "northeast", "midwest", "midwest", "south", "midwest", "west", "midwest", "southwest", "northeast", 
+  "northeast", "southwest", "northeast", "south", "midwest", "midwest", "southwest", "west", "northeast",
+  "northeast", "south", "midwest", "south", "southwest", "west", "northeast", "south", "west", "south", 
+  "midwest", "west")
+
+pdriving$region <- pdriving$state
+levels(pdriving$region) <- replacement_region
+```
+
+```{r}
+#renameing state column rows 
+data_cleaned <- data_cleaned %>%
+  mutate(state = case_when(
+    state == '1' ~ "AL", state == '3' ~ "AZ", state == '4' ~ "AR", state == '5' ~ "CA", 
+    state == '6' ~ "CO", state == '7' ~ "CT", state == '8' ~ "DE", state == '10' ~ "FL", 
+    state == '11' ~ "GA", state == '13' ~ "ID", state == '14' ~ "IL", state == '15' ~ "IN", 
+    state == '16' ~ "IA", state == '17' ~ "KS", state == '18' ~ "KY", state == '19' ~ "LA", 
+    state == '20' ~ "ME", state == '21' ~ "MD", state == '22' ~ "MA", state == '23' ~ "MI", 
+    state == '24' ~ "MN", state == '25' ~ "MS", state == '26' ~ "MO", state == '27' ~ "MT", 
+    state == '28' ~ "NE", state == '29' ~ "NV", state == '30' ~ "NH", state == '31' ~ "NJ", 
+    state == '32' ~ "NM", state == '33' ~ "NY", state == '34' ~ "NC", state == '35' ~ "ND", 
+    state == '36' ~ "OH", state == '37' ~ "OK", state == '38' ~ "OR", state == '39' ~ "PA", 
+    state == '40' ~ "RI", state == '41' ~ "SC", state == '42' ~ "SD", state == '43' ~ "TN", 
+    state == '44' ~ "TX", state == '45' ~ "UT", state == '46' ~ "VT", state == '47' ~ "VA", 
+    state == '48' ~ "WA", state == '49' ~ "WV", state == '50' ~ "WI", state == '51' ~ "WY"))
+```
+
+
+```{r}
+#Convert variables to numeric or factor
+data_cleaned$year_of_observation <- as.factor(data_cleaned$year_of_observation)
+data_cleaned$state <- as.factor(data_cleaned$state)
+data_cleaned$seatbelt <- as.factor(data_cleaned$seatbelt)
+data_cleaned$min_drinking_age <- as.numeric(data_cleaned$min_drinking_age)
+data_cleaned$zero_tol_law <- as.factor(data_cleaned$zero_tol_law)
+data_cleaned$grad_driver_law <- as.factor(data_cleaned$grad_driver_law)
+data_cleaned$per_se_law <- as.factor(data_cleaned$per_se_law)
+data_cleaned$total_fatalities <- as.numeric(data_cleaned$total_fatalities)
+data_cleaned$night_fatalities <- as.numeric(data_cleaned$night_fatalities)
+data_cleaned$weekend_fatalities <- as.numeric(data_cleaned$weekend_fatalities)
+data_cleaned$total_fatalities_per_100mil_miles <- as.numeric(data_cleaned$total_fatalities_per_100mil_miles)
+data_cleaned$night_fatalities_per_100mil_miles <- as.numeric(data_cleaned$night_fatalities_per_100mil_miles)
+data_cleaned$weekend_fatalities_per_100mil_miles <- as.numeric(data_cleaned$weekend_fatalities_per_100mil_miles)
+data_cleaned$state_population <- as.numeric(data_cleaned$state_population)
+data_cleaned$total_fatalities_rate <- as.numeric(data_cleaned$total_fatalities_rate)
+data_cleaned$night_fatalities_rate <- as.numeric(data_cleaned$night_fatalities_rate)
+data_cleaned$weekend_fatalities_rate <- as.numeric(data_cleaned$weekend_fatalities_rate)
+data_cleaned$vehicle_miles <- as.numeric(data_cleaned$vehicle_miles)
+data_cleaned$unemployment_rate <- as.numeric(data_cleaned$unemployment_rate)
+data_cleaned$percent_age_14_24 <- as.numeric(data_cleaned$percent_age_14_24)
+data_cleaned$speed_limit_70_or_higher <- as.factor(data_cleaned$speed_limit_70_or_higher)
+data_cleaned$primary_seatbelt <- as.factor(data_cleaned$primary_seatbelt)
+data_cleaned$secondary_seatbelt <- as.factor(data_cleaned$secondary_seatbelt)
+data_cleaned$vehicle_miles_per_capita <- as.numeric(data_cleaned$vehicle_miles_per_capita)
+data_cleaned$speed_limit <- as.numeric(data_cleaned$speed_limit)
+data_cleaned$blood_alcohol_level <- as.factor(data_cleaned$blood_alcohol_level)
+```
+
+2. (5 points) Provide a description of the basic structure of the dataset. What is this data? How, where, and when is it collected? Is the data generated through a survey or some other method? Is the data that is presented a sample from the population, or is it a *census* that represents the entire population? Minimally, this should include:
+    - How is the our dependent variable of interest `total_fatalities_rate` defined? 
+    
+> *Provide a description of the basic structure of the dataset*
+
+> After cleaning, the dataset consists of 27 features and 1,200 individual measurements with each year from 1980 to 2004 having 48 rows representing a datapoint for each of the lower 48 states (i.e. excluding Alaska and Hawaii). Information is given about the total number of fatalities per 100,000 people under several different criteria (e.g., number that occured at night or on the weekend), as well as certain demographic data such as unemployment rate, and various laws for each state in each year about blood alcohol level and whether or not a seatbelt is required.
+
+> *What is the data?*
+
+> The data is collecting the total fatalities per 100,000 in each state, as well as several other potentially significant features.
+
+> *How, where, and when is it collected?*
+
+> These data are complied by Dr. Donald G Freeman in his paper \textit{Drunk Driving Legislation and Traffic Fatalities: New Evidence on BAC 08 Laws}\footnote{https://doi.org/10.1111/j.1465-7287.2007.00039.x}, coming from several sources. Data on fatality rates are provided by the National Highway Traffic Safety Administration's (NHTSA) Fatality Analysis Reporting System (FARS). Data on traffic legislation for years between 1982 and 1999 provided by Thomas Dee, with data for later years downloaded directly from the NHTSA website. Unemployment data are taken from the US Bureau of Labour Statistics and age data are taken from the US Bureau of the Census. These data are not collected through a survey, but are rather sourced either directly from census or compiled by researchers or government agencies from publicly available information. These data should therefore be interpreted as census data that represent the entire population. 
+
+> *Is the data generated through a survey or some other method?*
+
+> In the article "Drunk Driving Legislation and Traffic Fatalities: New Evidence on BAC 08 Laws" (Donald G. Freeman, 2007), the data was collected as follows:
+
+  > "Fatality data are compiled from the Fatality Analysis Reporting System (FARS) administered by NHTSA. FARS compiles data on all traffic crashes that result in the death of a vehicle occupant or a nonmotorist. The data are gathered by state employees using a standard format for comparability across jurisdictions. Each record contains information on date, time, day of week, road conditions, age of victim, age of driver(s), number of vehicles, vehicle speed, and many other crash attributes."
+  
+> These data are not collected through a survey, but are rather sourced either directly from census or compiled by researchers or government agencies from publicly available information. They should therefore be interpreted as census data that represent the entire population. 
+
+> *Is the data that is presented a sample from the population, or is it a census that represents the entire population?*
+
+> The data was collected by the Fatality Analysis Reporting System (FARS) which is administered by the U.S. Department of Transportation, National Highway Traffic Safety Administrtaion. These are not voluntary survey data, but are rather sourced either directly from census or compiled by researchers or government agencies from publicly available information. They should therefore be interpreted as census data that represent the entire population. 
+
+> *How is the dependent variable of interest defined*
+
+> "Drunk Driving Legislation and Traffic Fatalities: New Evidence on BAC 08 Laws" (Donald G. Freeman, 2007) defines the dependent variable (total_fatalities_rate) as:
+
+  > "The dependent variable in the empirical analyses to follow is the rate of traffic fatalities per 100,000 population at the state level over the years 1980-2004 for the 48 contiguous staes. The FARS is used to generate fatality rates for total, weekend night, and multiple daytime crashes. Ideally, alcohol related crashes would be used for a test of alcohol laws but only since 1982 has a consistent methodology been established for counting alcohol-related traffic deaths, and even now there are wide variations across states in teh proportion of drivers tested, alive or dead."
+
+
+3. (20 points) Conduct a very thorough EDA, which should include both graphical and tabular techniques, on the dataset, including both the dependent variable `total_fatalities_rate` and the potential explanatory variables. Minimally, this should include: 
+    - How is the our dependent variable of interest `total_fatalities_rate` defined? 
+    
+    > The dependent variable of interest is defined above, but to reiterate was generated by dividing the raw FARS traffic fatality counts by the state population normalized to 100,000 residents.
+    
+\newpage
+
+- What is the average of `total_fatalities_rate` in each of the years in the time period covered in this dataset? 
+    
+    
+```{r, echo=FALSE}
+summary_by_year <- pdriving %>%
+  dplyr::select(year_of_observation, total_fatalities_rate) %>%
+  group_by(year_of_observation) %>%
+  dplyr::summarize(avg = mean(total_fatalities_rate))
+
+#summary_table <- summary_by_year %>%
+#  kbl(caption = "Average of Total Fatalities Rate by Year", 
+#      col.names = c("Year", "Average Fatalities Rate"), 
+#      longtable = TRUE) %>%
+#  kable_styling()
+
+summary_graph <- summary_by_year %>%
+ggplot(aes(x = year_of_observation, y = avg)) + 
+  geom_point() +
+    labs(
+    x = "Month",
+    y = "Average Fatality Rate",
+    title = "Average Driving Fatality Rate",
+    color=""
+  ) +
+  theme_classic() +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            face = "bold"),
+  axis.title = element_text(color = "#969696",
+                            face = "bold"),
+  axis.text = element_text(color = "#969696"),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
+  theme(
+    axis.text.x = element_text(angle = 55, hjust = 1)
+  )
+
+summary_graph
+```
+
+> The graph above shows the average falities per 100,000 residents from 1980 to 2004. From the graph we can see that the fatalities decline from 1980 to 1985 before having a few years of increase from 1985 to 1988. The rate then declines from 1988 to 1992 where it appears to stabilize. 
+
+\newpage
+
+> Taking advantage of the panel data nature of the data, we can look at the fatality rate by state over time. In this we can see that, with the notable exception of New Mexico, per capita driving fatality rates across all the lower 48 states have either remained flat or are decreasing between 1980 and 2004.
+
+``` {r panel by state, fig.width = 8, fig.height = 8, echo=FALSE}
+ggplot(data = data_cleaned, aes(x = year_of_observation, y = total_fatalities_rate, group = state)) +
+  geom_line() + 
+  geom_point() +
+  facet_wrap(~ state) +
+    labs(
+    x = "Month",
+    y = "Average Fatality Rate",
+    title = "Annual per capite Driving Fatality Rate by State",
+    color=""
+  ) +
+  theme_classic() +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            face = "bold"),
+  axis.title = element_text(color = "#969696",
+                            face = "bold"),
+  axis.text = element_text(color = "#969696"),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  scale_x_discrete(breaks = scales::pretty_breaks(n = 4)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
+  theme(
+    axis.text.x = element_text(angle = 55, hjust = 1)
+  )
+
+```
+
+
+## EDA: Numeric Value Analysis
+
+> To simplify the analysis, we've removed the weekend and night variables from the EDA and focused only on the total_fatalies_rate rather than total fatalities or fatalities per 100 mil miles. The correlation matrix is presented below:
+
+```{r, fig.width=8, fig.height=8, echo=FALSE}
+data_analysis <- data_cleaned %>%
+  dplyr::select(-c("total_fatalities", "night_fatalities", "weekend_fatalities",
+            "total_fatalities_per_100mil_miles", "night_fatalities_per_100mil_miles", "weekend_fatalities_per_100mil_miles",
+            "night_fatalities_rate", "weekend_fatalities_rate"))
+
+correlation_matrix <- round(cor(data_analysis[sapply(data_analysis, is.numeric)], use = "complete.obs"),2)
+ggcorrplot(correlation_matrix, hc.order = TRUE, type="lower", lab=TRUE, lab_size = 3) + 
+  labs(title = "Correlation Matrix of Numeric Variables") +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696"))
+```
+
+> With the total fatalities rate, we can see that there is a positive correlation with unemployment_rate, percent_age_14_24 and vehicle_miles_per_capita, while all of the other variables (except speed limit) have a negative correlation. None of the correlation coefficients is above 0.5, so these covariation between the fatality rates and the other variables is not particularly high. It is important to also note the high value between vehicle miles driven and state population (0.97) as the high covariance has a potential to skew model results. Counterintuitively, there appears to be no corrlation bewteen speed limit values and the total fatality rate.
+
+> Each of the dependent variables are analyzed in more detail below. 
+
+### Unemployment Rate
+
+```{r, warning=FALSE, message=FALSE, fig.width=14, fig.height=4, echo=FALSE}
+hst <- ggplot(data_cleaned, aes(x = unemployment_rate)) + geom_histogram() + ggtitle("Histogram") +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  labs(
+    x = "Unemployment Rate",
+    y = "Count")
+bxplt <- ggplot(data_cleaned, aes(x = year_of_observation, y = unemployment_rate)) + geom_boxplot() + 
+  ggtitle("Boxplot by Year") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  labs(
+    x = "Year",
+    y = "Unemployment Rate")
+sctr <- ggplot(data_cleaned, aes(x = unemployment_rate, y = total_fatalities_rate)) + geom_point() + geom_smooth() + ggtitle("Scatterplot")  +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  labs(
+    x = "Unemployment Rate",
+    y = "Total Fatality Rate")
+
+(hst | bxplt | sctr)
+```
+
+> From the histogram, the unemployment rate appears to be slightly skewed, and would benefit from a log transfrmation. The boxplot shows that there are some distinct differences in unemployment rate by year, and the scatter plot illustrates the upward trend, with fewer observations at higher unemployment rates. 
+
+### percent population aged 14 through 24
+
+```{r, warning=FALSE, message=FALSE, fig.width=14, fig.height=4, echo=FALSE}
+hst <- ggplot(data_cleaned, aes(x = percent_age_14_24)) + geom_histogram() + ggtitle("Histogram") +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  labs(
+    x = "Percent Aged 14-24",
+    y = "Count")
+bxplt <- ggplot(data_cleaned, aes(x = year_of_observation, y = percent_age_14_24)) + geom_boxplot() + 
+  ggtitle("Boxplot by Year") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  labs(
+    x = "Year",
+    y = "Percent Aged 14-24")
+sctr <- ggplot(data_cleaned, aes(x = percent_age_14_24, y = total_fatalities_rate)) + geom_point() + geom_smooth() + ggtitle("Scatterplot") +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  labs(
+    x = "Percent Aged 14-24",
+    y = "Total Fatalities Rate")
+
+(hst | bxplt | sctr)
+```
+
+> From the histogram, the variable seems to be relatively normally distributed and no transformation is suggested. There are distinct differences by year, with an evident downward trend. Related to total fatalities, there is a higher fatality rate the higher percentage of age 14 to 24 year olds. 
+
+### State population
+
+```{r, warning=FALSE, message=FALSE, fig.width=14, fig.height=4, echo=FALSE}
+hst <- ggplot(data_cleaned, aes(x = state_population)) + geom_histogram() + ggtitle("Histogram") +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  labs(
+    x = "State Population",
+    y = "Count")
+bxplt <- ggplot(data_cleaned, aes(x = year_of_observation, y = state_population)) + geom_boxplot() + 
+  ggtitle("Boxplot by Year") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  labs(
+    x = "Year",
+    y = "State Population")
+sctr <- ggplot(data_cleaned, aes(x = state_population, y = total_fatalities_rate)) + geom_point() + geom_smooth() + ggtitle("Scatterplot")+
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  labs(
+    x = "State Population",
+    y = "Total Fatalities Rate")
+
+(hst | bxplt | sctr)
+```
+
+> The histogram is rather skewed and would benefit from a log transformation. From the boxplot, the the median amount is rather flat, but the outliers are increasing. The scatterplot shows higher fatalities for lower populations. 
+
+### Vehicle miles
+
+```{r, warning=FALSE, message=FALSE, fig.width=14, fig.height=4, echo=FALSE}
+hst <- ggplot(data_cleaned, aes(x = vehicle_miles)) + geom_histogram() + ggtitle("Histogram") +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  labs(
+    x = "Vehicle Miles",
+    y = "Count")
+bxplt <- ggplot(data_cleaned, aes(x = year_of_observation, y = vehicle_miles)) + geom_boxplot() + 
+  ggtitle("Boxplot by Year") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  labs(
+    x = "Year",
+    y = "Vehicle Miles")
+sctr <- ggplot(data_cleaned, aes(x = vehicle_miles, y = total_fatalities_rate)) + geom_point() + geom_smooth() + ggtitle("Scatterplot") +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  labs(
+    x = "Vehicle Miles",
+    y = "Total Fatalities Rate")
+
+(hst | bxplt | sctr)
+```
+
+> The histogram is rather skewed and would benefit from a log transformation. From the boxplot, the the median amount is rather flat, but the outliers are increasing. The scatterplot shows higher fatalities for lower vehicle populations. 
+
+### Vehicle miles per capita
+
+```{r, warning=FALSE, message=FALSE, fig.width=14, fig.height=4, echo=FALSE}
+hst <- ggplot(data_cleaned, aes(x = vehicle_miles_per_capita)) + geom_histogram() + ggtitle("Histogram") +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  labs(
+    x = "Vehicle Miles Per Capita",
+    y = "Count")
+bxplt <- ggplot(data_cleaned, aes(x = year_of_observation, y = vehicle_miles_per_capita)) + geom_boxplot() + 
+  ggtitle("Boxplot by Year") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  labs(
+    x = "Year",
+    y = "Vehicle Miles Per Capita")
+sctr <- ggplot(data_cleaned, aes(x = vehicle_miles_per_capita, y = total_fatalities_rate)) + geom_point() + geom_smooth() + ggtitle("Scatterplot") +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  labs(
+    x = "Vehicle Miles Per Capita",
+    y = "Total Fatalities Rate")
+
+(hst | bxplt | sctr)
+```
+
+> The histogram is rather normally distributed, doesn't necessarily need a tranformation. From the boxplot, the the median amount is increasing per year of population, and the scatterplot shows a positive correlation between fatalities rate and vehicle miles per capita. 
+
+### Speed limit
+
+```{r, warning=FALSE, message=FALSE, fig.width=14, fig.height=4, echo=FALSE}
+hst <- ggplot(data_cleaned, aes(x = speed_limit)) + geom_histogram() + ggtitle("Histogram")  +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  labs(
+    x = "Speed Limit",
+    y = "Count")
+bxplt <- ggplot(data_cleaned, aes(x = year_of_observation, y = speed_limit)) + geom_boxplot() + 
+  ggtitle("Boxplot by Year") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))  +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  labs(
+    x = "Year",
+    y = "Speed Limit")
+sctr <- ggplot(data_cleaned, aes(x = speed_limit, y = total_fatalities_rate)) + geom_point() + geom_smooth() + ggtitle("Scatterplot")  +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  labs(
+    x = "Speed Limit",
+    y = "Total Fatalities Rate")
+
+
+dfg <- data_cleaned %>%
+  group_by(year_of_observation, speed_limit) %>%
+  summarise(count = n())
+
+brplt <- ggplot(dfg, aes(x = year_of_observation, y = dfg$count, fill=dfg$speed_limit)) +
+  geom_col() +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  labs(
+    title = "Proportion of Speed Limits by State",
+    x = "Year",
+    y = "Number of States",
+    fill = "Speed Limit")
+
+(hst | brplt | sctr)
+```
+
+> We're treating speed limit as a numeric variable, but it could otherwise be a factor variable. The most common speed limit is 60mpg, and from the bar plot we can see an increase in speed limit as the years progress. From the scatterplot R wasn't able to fit a smoothed line, but there does appear to be a slight upward trend.
+
+### Minimum Drinking Age
+
+```{r, warning=FALSE, message=FALSE, fig.width=14, fig.height=4, echo=FALSE}
+hst <- ggplot(data_cleaned, aes(x = min_drinking_age)) + geom_histogram() + ggtitle("Histogram")  +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  labs(
+    x = "Minimum Drinking Age",
+    y = "Count")
+bxplt <- ggplot(data_cleaned, aes(x = year_of_observation, y = min_drinking_age)) + geom_boxplot() + 
+  ggtitle("Boxplot by Year") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))  +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  labs(
+    x = "Year",
+    y = "Minimum Drinking Age")
+sctr <- ggplot(data_cleaned, aes(x = min_drinking_age, y = total_fatalities_rate)) + geom_point() + geom_smooth() + ggtitle("Scatterplot") +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  labs(
+    x = "Minimum Drinking Age",
+    y = "Total Fatalities Rate")
+
+dfg <- data_cleaned %>%
+  group_by(year_of_observation, min_drinking_age) %>%
+  summarise(count = n())
+
+brplt <- ggplot(dfg, aes(x = year_of_observation, y = dfg$count, fill=dfg$min_drinking_age)) +
+  geom_col() +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  labs(
+    title = "Proportion of Minimum Drinking Age by State",
+    x = "Year",
+    y = "Number of States",
+    fill = "Minimum Drinking Age")
+
+(hst | brplt | sctr)
+```
+
+> From the histogram, the most common minimum drinking age is 21, and in the bar plot we can see the drinking age increasing over time until it is 21 across all the states. From the scatterplot we can see that as the minimum drinking age increases the total fatalities rate decreases.
+
+## EDA: Factor Variable Analysis
+
+### Year of Observation
+
+```{r, echo=FALSE, fig.width=15, fig.height=15}
+bxplt_year <- ggplot(data_cleaned, aes(x = year_of_observation, y = total_fatalities_rate)) + geom_boxplot() + 
+  ggtitle("Boxplot by Year") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  labs(
+    x = "Year",
+    y = "Total Fatality Rate")
+
+bxplt_state <-   data_cleaned %>% ggplot(aes(x = reorder(state,total_fatalities_rate), y = total_fatalities_rate)) + geom_boxplot() +
+  ggtitle("Boxplot by State") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+    labs(
+    x = "State",
+    y = "Total Fatality Rate")
+
+bxplt_seatbelt <- ggplot(data_cleaned, aes(x = seatbelt, y = total_fatalities_rate)) + geom_boxplot() + 
+  ggtitle("Boxplot by Seatbelt") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+    labs(
+    x = "Seatbelt",
+    y = "Total Fatality Rate")
+
+bxplt_primary <- ggplot(data_cleaned, aes(x = primary_seatbelt, y = total_fatalities_rate)) + geom_boxplot() + 
+  ggtitle("Boxplot by Primary Seatbelt") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+    labs(
+    x = "Primary Seatbelt",
+    y = "Total Fatality Rate")
+
+bxplt_secondary <- ggplot(data_cleaned, aes(x = secondary_seatbelt, y = total_fatalities_rate)) + geom_boxplot() + 
+  ggtitle("Boxplot by Secondary Seatbelt") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+    labs(
+    x = "Secondary Seatbelt",
+    y = "Total Fatality Rate")
+
+bxplt_blood <- ggplot(data_cleaned, aes(x = blood_alcohol_level, y = total_fatalities_rate)) + geom_boxplot() + 
+  ggtitle("Boxplot by Blood Alcohol Level") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+    labs(
+    x = "Blood Alcohol Level",
+    y = "Total Fatality Rate")
+
+bxplt_zero <- ggplot(data_cleaned, aes(x = zero_tol_law, y = total_fatalities_rate)) + geom_boxplot() + 
+  ggtitle("Boxplot by Zero Tolerance Law") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+    labs(
+    x = "Zero Tolerance Law",
+    y = "Total Fatality Rate")
+
+bxplt_grad <- ggplot(data_cleaned, aes(x = grad_driver_law, y = total_fatalities_rate)) + geom_boxplot() + 
+  ggtitle("Boxplot by Graduate Law") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+    labs(
+    x = "Graduate Driver Law",
+    y = "Total Fatality Rate")
+
+bxplt_perse <- ggplot(data_cleaned, aes(x = per_se_law, y = total_fatalities_rate)) + geom_boxplot() + 
+  ggtitle("Boxplot by Per Se Law") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+    labs(
+    x = "Per Se Law",
+    y = "Total Fatality Rate")
+
+bxplt_70 <- ggplot(data_cleaned, aes(x = speed_limit_70_or_higher, y = total_fatalities_rate)) + geom_boxplot() + 
+  ggtitle("Boxplot by Speed Limit 70 or Higher") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+    labs(
+    x = "Speed Limit 70 or Higher",
+    y = "Total Fatality Rate")
+
+(bxplt_year | bxplt_state) /
+  (bxplt_seatbelt | bxplt_primary | bxplt_secondary | bxplt_blood) /
+  (bxplt_zero | bxplt_grad | bxplt_perse | bxplt_70)
+```
+
+> The boxplots above show the total fatality rate mapped against the different variabkes. From the graphs, in order, we see:
+
+> 1. *Year*: There is a subtle decline in fatalities by year.
+> 2. *State*: The fatality rate by state varies drastically, and we expect this to be a significant variable in our model. 
+> 3. *Seatbelt*: Fatality rates are the highest when there are no seatbelts.
+> 4. *Primary Seatbelt Law*: There appears to be a slight deline in the fatality rate when there are primary seatbelt laws.
+> 5. *Secondary Seatbelt Law*: The different in total fatality rate is relatively minor between both factors. 
+> 6. *Blood Alcohol Level*: There appears to be higher fatalities when there are no blood alcohol laws, and also when the laws are higher (0.10 vs 0.08).
+> 7. *Zero tolerance, Graduate driver and Per Se Laws*: All of the laws show a decline in total fatality rate
+> 8. *Speed Limit 70 or Higher*: There appears to be a slightly lower fatality rate when the speed limit is 70 or lower.
+
+
+# (15 points) Preliminary Model
+
+Estimate a linear regression model of *totfatrte* on a set of dummy variables for the years 1981 through 2004 and interpret what you observe. In this section, you should address the following tasks: 
+
+```{r Preliminary Model, warning=FALSE}
+mod.prel <- plm(
+  formula = total_fatalities_rate ~ year_of_observation,
+  data = pdriving, 
+  model = "pooling" #same as linear model
+  )
+```
+
+
+```{r, echo=FALSE, results='asis', warning=FALSE}
+stargazer(mod.prel, title = "Preliminary Model", no.space = TRUE, header = FALSE, font.size = 'small', single.row = TRUE,
+          type = 'latex',  dep.var.labels = c("Total Fatality Rate"), 
+          covariate.labels=c("Dummy Variable 1981",
+                             "Dummy Variable 1982",
+                             "Dummy Variable 1983",
+                             "Dummy Variable 1984",
+                             "Dummy Variable 1985",
+                             "Dummy Variable 1986",
+                             "Dummy Variable 1987",
+                             "Dummy Variable 1988",
+                             "Dummy Variable 1989",
+                             "Dummy Variable 1990",
+                             "Dummy Variable 1991",
+                             "Dummy Variable 1992",
+                             "Dummy Variable 1993",
+                             "Dummy Variable 1994",
+                             "Dummy Variable 1995",
+                             "Dummy Variable 1996",
+                             "Dummy Variable 1997",
+                             "Dummy Variable 1998",
+                             "Dummy Variable 1999",
+                             "Dummy Variable 2000",
+                             "Dummy Variable 2001",
+                             "Dummy Variable 2002",
+                             "Dummy Variable 2003",
+                             "Dummy Variable 2004"))
+```
+> Each of the dummy variables are statistically significant except that of 1981. 
+
+- Why is fitting a linear model a sensible starting place?
+
+> A linear model is always a sensible place to start as they are generally the most parsimonious and easily explainable models. For this dataset in particular, in the EDA we have already identified some areas in which there appear to be linear relationships, therefore, it's entirely appropriate to start with linear methods in the modelling process. 
+
+- What does this model explain, and what do you find in this model? 
+
+> The linear model is above is only a function of year, where each year is predicting the average in that particularly. As we can see, that as year increases there is a slight deline in the total fatalities rate, and eventually begins to stabalize. This can be visualized in the graph below. 
+
+```{r Preliminary Model Plot, echo=FALSE}
+#data formatting
+projected <- broom::augment(mod.prel)
+
+#graph
+data_cleaned %>%
+  ggplot(
+    aes(
+      x = year_of_observation, 
+      y = total_fatalities_rate
+      )
+    ) +
+  geom_point(
+    color = "gray", 
+    alpha = 0.4
+    ) +
+  geom_point(
+    data = projected,
+    aes(x = year_of_observation, y = .fitted),
+    colour = "blue", size = 3) +
+  labs(
+    x = "Year",
+    y = "Fatality rate",
+    title = "Average Fatality Rate by Year"
+    ) +
+  theme_classic() +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            size = 14,
+                            face = "bold"),
+  plot.subtitle = element_text(color="#969696",
+                               size = 12,
+                               face = "italic"),
+  axis.title = element_text(color = "#969696",
+                            size = 12,
+                            face = "bold"),
+  axis.text = element_text(color = "#969696", size = 10),
+  axis.text.x = element_text(angle = 90),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696"),
+  legend.position = "none"
+  ) 
+```
+
+> We also run the Breusch-Pagam LM test for heteroskedasticity, where we reject the null hypothesis of homoskedasticity win the model as the p-value is below 0.05.
+
+```{r}
+pcdtest(mod.prel, test="lm")
+```
+> We also run the Durbin-Watson test for serial correlation in the model, and we reject the null hypothesis of no serial correlation in the model. 
+
+```{r}
+pdwtest(mod.prel)
+```
+
+
+- Did driving become safer over this period? Please provide a detailed explanation.
+
+> The overall fatalities rate has declined over the years, and this is also shown by the model co-efficients getting more negative over the years, with high significance. Therefore, it seems that driving has become safer over the period, but we can see see a significant variance in the results versus the projection. There may be missing variables that are causing the decrease in fatalities.
+
+- What, if any, are the limitation of this model. In answering this, please consider **at least**: 
+    - Are the parameter estimates reliable, unbiased estimates of the truth? Or, are they biased due to the way that the data is structured?
+    
+    > The only variable is for year, which is not necessarily unbiased estimator of the truth. There is omitted variable risk, and we need to explore alternative models which may be better predictors of total fatalities than just time alone. For example, in our EDA we saw that there does appear to be differences in the rates over time in different states. As well, the model assumes homoskedasticity and no serial correlation, but our tests indicate we reject the null for both.
+    
+    - Are the uncertainty estimate reliable, unbiased estimates of sampling based variability? Or, are they biased due to the way that the data is structured? 
+    
+    > Since the total fatalities can potentially differ by the states due to their laws and safety requirements, there is a potential bias in the data if these features aren't considered within the final model. There is also uncertainty within our model as there is potential serial correlation. 
+
+# (15 points) Expanded Model 
+
+Expand the **Preliminary Model** by adding variables related to the following concepts: 
+
+- Blood alcohol levels 
+- Per se laws
+- Primary seat belt laws (Note that if a law was enacted sometime within a year the fraction of the year is recorded in place of the zero-one indicator.)
+- Secondary seat belt laws 
+- Speed limits faster than 70 
+- Graduated drivers licenses 
+- Percent of the population between 14 and 24 years old
+- Unemployment rate
+- Vehicle miles driven per capita. 
+
+If it is appropriate, include transformations of these variables. Please carefully explain carefully your rationale, which should be based on your EDA, behind any transformation you made. If no transformation is made, explain why transformation is not needed. 
+
+```{r expanded model, warning=FALSE}
+mod.exp <- plm(
+  formula = total_fatalities_rate ~ year_of_observation + 
+    blood_alcohol_level + per_se_law + primary_seatbelt +
+    secondary_seatbelt + speed_limit_70_or_higher + grad_driver_law +
+    percent_age_14_24 + log(unemployment_rate) + vehicle_miles_per_capita,
+  data = pdriving, 
+  model = "pooling" #same as linear model
+  )
+```
+
+```{r, echo=FALSE, results='asis', warning=FALSE}
+stargazer(mod.exp, title = "Expanded Model", no.space = TRUE, header = FALSE, font.size = 'small', single.row = TRUE,
+          type = 'latex',  dep.var.labels = c("Total Fatality Rate"),
+          covariate.labels=c("Dummy Variable 1981",
+                             "Dummy Variable 1982",
+                             "Dummy Variable 1983",
+                             "Dummy Variable 1984",
+                             "Dummy Variable 1985",
+                             "Dummy Variable 1986",
+                             "Dummy Variable 1987",
+                             "Dummy Variable 1988",
+                             "Dummy Variable 1989",
+                             "Dummy Variable 1990",
+                             "Dummy Variable 1991",
+                             "Dummy Variable 1992",
+                             "Dummy Variable 1993",
+                             "Dummy Variable 1994",
+                             "Dummy Variable 1995",
+                             "Dummy Variable 1996",
+                             "Dummy Variable 1997",
+                             "Dummy Variable 1998",
+                             "Dummy Variable 1999",
+                             "Dummy Variable 2000",
+                             "Dummy Variable 2001",
+                             "Dummy Variable 2002",
+                             "Dummy Variable 2003",
+                             "Dummy Variable 2004",
+                             "Factor Variable for Blood Alcohol of .08",
+                             "Factor Variable for Blood Alcohol of None",
+                             "Factor Variable Per Se Law in Effect",
+                             "Factor Variable Primary Seatbelt Law in Effect",
+                             "Factor Variable Secondary Seatbelt Law in Effect",
+                             "Factor Variable Speed Limit 70 or Higher in Effect",
+                             "Factor Variable of Graduate Driver Laws in Effect",
+                             "Numeric Variable Percentage of Population aged 14-24",
+                             "Numeric Variable Log of Unemployment Rate",
+                             "Numeric Variable Vehicle Miles per Capita"))
+```
+
+- Transformation of variables
+
+> As discussed in the EDA, for the variables within this model, we have made the following transformations:
+
+> - Due to the skew on the results for unemployment rate, we've applied a log transformation to bring the model more towards normal distribution.
+> - For each factor variable we've set values below 0.5 as zero and above 0.5 as one. This only impacts years when there were changes in laws, which were relatively few. This change was made to increase interpretability and to have more parsimonious models.
+
+> Note: if we were including them in the model, we would also suggest logging state population and vehicle miles (different than vehicle miles per capita) as there was also a skew in their data.
+
+- How are the blood alcohol variables defined? Interpret the coefficients that you estimate for this concept. 
+
+> "bac10" means there is a blood alcohol limit of 0.10, and "bac08" means there is a blood alcohol limit of 0.08 to be considered legally intoxicated. When neither bac10 or bac08 was flagged, we created a new indicator for "none".
+
+> The baseline factor is a blood alcohol limit of 0.10, and we can see that when the the limit decreases to .08, the total fatality rate decreases by 1.146 which is statistically significant.
+
+> The change between a blood alcohol limit of 0.10 and none, increases the total fatalities rate by 1.364 and this increase is also significant. 
+
+- Do *per se laws* have a negative effect on the fatality rate? 
+
+> When per se laws (i.e. administrative license revocation) are present the total fatality rate decreases by 0.498, and this is statistically significant at 0.1 only.
+
+- Does having a primary seat belt law? 
+
+> Primary seatbelt laws are shown to decrease the total number of fatalities by 0.348 and secondary seatbelt laws are shown decrease the fatality rate by 0.137, however, neither variables are statistically significant even at the 0.1 level. 
+
+- Impact of Other Variables
+
+> *Year*: Each year has a negative coefficient and are statistically significant. Relatively to the preliminary model, the impacts are lessened as presumably some of the effect was transferred to other variables.
+> *Speed Limit of 70 or Higher*: When the speed limit is 70 or higher, the fatality rate increases by 2.988 which is both statistically and practically significant.
+> *Percentage of Population aged 14-24*: For each percentage of the population aged 14-24 the fatality rate increases by 0.192, however, this is not a statistically significant effect.
+> *Log of Unemployment Rate*: As the log of unemployment increases, the fatality rate increases by 5.137 which is statistically significant.
+> *Vehicles per Capita*: As the vehicles per capita increases, the fatality rate increases by 0.003 which is statistically significant.
+
+- Tests
+
+> We also run the Breusch-Pagam LM test for heteroskedasticity, where we reject the null hypothesis of homoskedasticity win the model as the p-value is below 0.05.
+
+```{r}
+pcdtest(mod.exp, test="lm")
+```
+> We also run the Durbin-Watson test for serial correlation in the model, and we reject the null hypothesis of no serial correlation in the model. 
+
+```{r}
+pdwtest(mod.exp)
+```
+
+# (15 points) State-Level Fixed Effects 
+
+Re-estimate the **Expanded Model** using fixed effects at the state level. 
+
+```{r Fixed Effect Model, warning=FALSE}
+mod.fix <- plm(
+  formula = total_fatalities_rate ~ year_of_observation + 
+    blood_alcohol_level + per_se_law + primary_seatbelt +
+    secondary_seatbelt + speed_limit_70_or_higher + grad_driver_law +
+    percent_age_14_24 + unemployment_rate + vehicle_miles_per_capita,
+  data = pdriving, #indexed on state and year
+  model = "within" #adjusting to a fixed effect model
+  )
+```
+
+```{r, echo=FALSE, results='asis', warning=FALSE}
+stargazer(mod.fix, title = "Fixed Effect Model", no.space = TRUE, header = FALSE, font.size = 'small', single.row = TRUE,
+          type = 'latex',  dep.var.labels = c("Total Fatality Rate"),
+          covariate.labels=c("Dummy Variable 1981",
+                             "Dummy Variable 1982",
+                             "Dummy Variable 1983",
+                             "Dummy Variable 1984",
+                             "Dummy Variable 1985",
+                             "Dummy Variable 1986",
+                             "Dummy Variable 1987",
+                             "Dummy Variable 1988",
+                             "Dummy Variable 1989",
+                             "Dummy Variable 1990",
+                             "Dummy Variable 1991",
+                             "Dummy Variable 1992",
+                             "Dummy Variable 1993",
+                             "Dummy Variable 1994",
+                             "Dummy Variable 1995",
+                             "Dummy Variable 1996",
+                             "Dummy Variable 1997",
+                             "Dummy Variable 1998",
+                             "Dummy Variable 1999",
+                             "Dummy Variable 2000",
+                             "Dummy Variable 2001",
+                             "Dummy Variable 2002",
+                             "Dummy Variable 2003",
+                             "Dummy Variable 2004",
+                             "Factor Variable for Blood Alcohol of .08",
+                             "Factor Variable for Blood Alcohol of None",
+                             "Factor Variable Per Se Law in Effect",
+                             "Factor Variable Primary Seatbelt Law in Effect",
+                             "Factor Variable Secondary Seatbelt Law in Effect",
+                             "Factor Variable Speed Limit 70 or Higher in Effect",
+                             "Factor Variable of Graduate Driver Laws in Effect",
+                             "Numeric Variable Percentage of Population aged 14-24",
+                             "Numeric Variable Log of Unemployment Rate",
+                             "Numeric Variable Vehicles per Capita"))
+```
+
+
+- What do you estimate for coefficients on the blood alcohol variables? How do the coefficients on the blood alcohol variables change, if at all? 
+
+> The variables for blood alcohol change as follows:
+
+| Model        | Level 0.08  | Level None   |
+|--------------|-------------|--------------|
+| Pooled       | -1.146      | 1.364        |
+| Fixed Effect | -0.308      | 0.944        |
+
+> As we can see that when removing the effect of state mathematically with the within model the coefficients for blood alcohol levels dampens the impact of blood alcohol laws. 
+
+- What do you estimate for coefficients on per se laws? How do the coefficients on per se laws change, if at all? 
+
+> The coefficient on per se laws changes as follows:
+
+| Model        | Per Se Law  |
+|--------------|-------------|
+| Pooled       | -0.498      |
+| Fixed Effect | -1.086      |
+
+> Here we can see a stronger impact of implementing per se laws, with the reduction in fatalities going down by 1.1 vs. 0.5 in the expanded pooling model. 
+
+- What do you estimate for coefficients on primary seat-belt laws? How do the coefficients on primary seatbelt laws change, if at all? 
+
+> The coefficient on seatbelt laws changes as follows:
+
+| Model        | Primary     | Secondary    |
+|--------------|-------------|--------------|
+| Pooled       | -0.348      | -0.137       |
+| Fixed Effect | -1.228      | -0.355       |
+
+> Note the secondary seatbelt is not statistically significant for either model, and the primary seatbelt is only significant in the fixed effect model.
+
+> Here we can see that by implementing seatbelt laws there is a decrease in the total fatality rate, which is consistent with our natural understanding.
+
+Which set of estimates do you think is more reliable? Why do you think this? 
+
+```{r}
+pFtest(mod.fix, mod.exp)
+```
+
+> The pFtest has the null hypothesis that the Pooled OLS model is preferable and the alternative hypothesis that the fixed effect model is preferrable. Since we have a significant p-value the fixed effect model (where we mathematically remove the state effect) is preferred.
+
+- What assumptions are needed in each of these models?  
+
+  > For a fixed effect model, the necessary assumptions are as follows (taken directly from the live session):
+  
+  > 1. *Linearity*: The model is linear in parameters
+  > 2. *i.i.d.*: The observations are independent across individuals but not necessarily across time. This is guaranteed by random sampling of individuals.
+  > 3. *Indentifiability*: The regressors, including a constant, are not perfectly collinear, and all regressors (but the constant) have non-zero variance and not too many extreme values.
+  > 4. *Zero conditional means (strict exogeneity)*: $E(x_{it},u_{is}) =0$ for $s=1,2,3,....,T$
+  
+  > For a pooled effect model, the necessary assumptions are as follows (taken directly from the live session):
+  
+  > 1. *Linearity*: The model is linear in parameters
+  > 2. *i.i.d.*: The observations are independent across individuals but not necessarily across time. This is guaranteed by random sampling of individuals.
+  > 3. *Indentifiability*: The regressors, including a constant, are not perfectly collinear, and all regressors (but the constant) have non-zero variance and not too many extreme values.
+  > 4. $x_it$ is uncorrelated with idiosyncratic error term $u_{it}$ and individual-specific effect $\gamma_i$
+  > a)  $$E(u_{it} x_{it}) = 0$$
+  > b)  $$E(x_{it}, \gamma_i) = 0$$
+  
+- Are these assumptions reasonable in the current context?
+
+  > We believe that the model is linear within it's parameters, as we are able to estimate the model with a linear equation. We also believe that the data is i.i.d. in respect to the observations across individuals due to the robust data collection methodology. When we analyze the results of the models, we don't see any variables with zero variance which helps us to assume that the identifiability assumption is met. However, as mentioned earlier, for the expanded pooled model, there is likely omitted variable bias especially and the F test confirms this in favor of the fixed effect model. 
+
+  > We also run the Breusch-Pagam LM test for heteroskedasticity for the fixed effect model, where we reject the null hypothesis of homoskedasticity win the model as the p-value is below 0.05.
+
+```{r}
+pcdtest(mod.fix, test="lm")
+```
+  > We also run the Durbin-Watson test for serial correlation in the model, and we reject the null hypothesis of no serial correlation in the model.
+
+```{r}
+pdwtest(mod.fix)
+```
+
+# (10 points) Consider a Random Effects Model 
+
+Instead of estimating a fixed effects model, should you have estimated a random effects model?
+
+- Please state the assumptions of a random effects model, and evaluate whether these assumptions are met in the data. 
+
+> In addition to the fixed effect assumptions, there are the three additional assumptions for a random effect model (taken from the textbook) are: 
+
+> 1. There are no perfect linear relationships among the explanatory variables.
+> 2. The expected value of $a_i$ given all explanatory variables is constant: $E(a_i | X_i) = \beta_0$
+> 3. The variance of $a_i$ given all explanatory variables is constant: $Var(a_i | X_i) = \sigma^2_a$
+
+> In order to test the assumptions we run a Hausman Test for Fixed vs. Random Effects, which determines if the residuals are uncorrelated with other predictors in the model:
+
+
+```{r Random Effect Model, warning=FALSE}
+mod.random <- plm(
+  formula = total_fatalities_rate ~ year_of_observation +
+    blood_alcohol_level + per_se_law + primary_seatbelt +
+    secondary_seatbelt + speed_limit_70_or_higher + grad_driver_law +
+    percent_age_14_24 + unemployment_rate + vehicle_miles_per_capita,
+  data = pdriving, #indexed on state and year
+  model = "random" #adjusting to a fixed effect model
+  )
+
+phtest(mod.fix, mod.random)
+```
+> Since the p-value is less than 0.05, we reject the null hypothesis that random effects are appropriate, suggesting that we should use a fixed effect model. 
+
+- If the assumptions are, in fact, met in the data, then estimate a random effects model and interpret the coefficients of this model. Comment on how, if at all, the estimates from this model have changed compared to the fixed effects model. 
+
+> Since we reject the null hypothesis of the Hausman test, that means the assumptions are not valid and we should not run a random effect model.
+
+- If the assumptions are **not** met, then do not estimate the data. But, also comment on what the consequences would be if you were to *inappropriately* estimate a random effects model. Would your coefficient estimates be biased or not? Would your standard error estimates be biased or not? Or, would there be some other problem that might arise?
+
+> Using a random effect model inappropriately could impact the validity of the model as the assumptions are not satisfied. The random effect model removes the time varying impact, and would only be showing the overall coefficient averages which doesn't tell us anything about how the variables change over time. As well, having correlation between residuals and predictors would mean the standard error estimates would be biased.
+
+# (10 points) Model Forecasts 
+
+The COVID-19 pandemic dramatically changed patterns of driving. Find data (and include this data in your analysis, here) that includes some measure of vehicle miles driven in the US. Your data should at least cover the period from January 2018 to as current as possible. With this data, produce the following statements: 
+
+``` {r pull data from FRED}
+
+ fredr_set_key('f62c7a0a7d2a6882f681e925f1922742')
+ 
+ vehicle_miles_name <- 'VMT'
+ population <- 'POP'
+ time_start = as.Date("2018-01-01")
+ time_end = as.Date("2023-09-01")
+ 
+ recent_driving_data <- fredr(
+   series_id = vehicle_miles_name,
+   observation_start = time_start,
+   observation_end = time_end
+   ) %>%
+    dplyr::select(
+      date,
+      value
+    ) %>%
+    dplyr::rename(
+      "miles_driven_per_month" = value
+    )
+ 
+ recent_population_data <- fredr(
+    series_id = population,
+    observation_start = time_start,
+    observation_end = time_end
+    ) %>%
+    dplyr::select(
+      date,
+      value
+    ) %>%
+    dplyr::rename(
+      "pop" = value
+    )
+ 
+ recent_data = merge(recent_driving_data, recent_population_data)
+
+# save(recent_data, file = "fredr.Rda") #Uncomment if you don't have a fredr.Rda file saved
+```
+
+``` {r load saved data from FRED}
+load("fredr.Rda")
+```
+
+```{r compare month-to-month from 2018 to pandemic, warning=FALSE}
+recent_data <- recent_data %>%
+  mutate(
+    miles_per_capita = miles_driven_per_month / (pop/1000)
+  )
+
+recent_data <- recent_data %>%
+  mutate(
+    difference = (miles_per_capita - recent_data[month(recent_data$date) == month(date) & year(recent_data$date) == 2018,][['miles_per_capita']]) / recent_data[month(recent_data$date) == month(date) & year(recent_data$date) == 2018,][['miles_per_capita']] * 100
+      )
+
+max_month = c(as.numeric(recent_data[which.max(recent_data$difference),][['date']]), as.numeric(recent_data[which.max(recent_data$difference),][['difference']]))
+max_pandemic_month = c(as.numeric(recent_data[recent_data$date > as.Date("2020-04-01"),][which.max(recent_data[recent_data$date > as.Date("2020-04-01"),]$difference),][['date']]), as.numeric(recent_data[recent_data$date > as.Date("2020-04-01"),][which.max(recent_data[recent_data$date > as.Date("2020-04-01"),]$difference),][['difference']]))
+min_month = c(as.numeric(recent_data[which.min(recent_data$difference),][['date']]), as.numeric(recent_data[which.min(recent_data$difference),][['difference']]))
+```
+
+- Comparing monthly miles driven in 2018 to the same months during the pandemic: 
+
+```{r, echo=FALSE}
+ggplot(data = recent_data) +
+  geom_line(aes(x = month(date), y=difference, group=year(date), colour = as.factor(year(date)))) +
+  labs(
+    x = "Month",
+    y = "Percentage Change (%)",
+    title = "Percentage Change in per capita Miles Driven per Month \n Compared to the Same Period in 2018",
+    color=""
+  ) +
+  theme_classic() +
+  theme(
+  plot.title = element_text(color = "#0099F8",
+                            face = "bold"),
+  axis.title = element_text(color = "#969696",
+                            face = "bold"),
+  axis.text = element_text(color = "#969696"),
+  axis.line = element_line(color = "#969696"),
+  axis.ticks = element_line(color = "#969696")) +
+  scale_x_continuous(breaks = seq_along(month.name),  labels = month.name) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
+  theme(
+    axis.text.x = element_text(angle = 55, hjust = 1)
+  )
+```
+
+
+  - What month demonstrated the largest decrease in driving? How much, in percentage terms, lower was this driving? 
+  
+  > The largest drop in driving was April, which was the first full month of COVID-19 lockdown. This was a percentage decrease of approximately -39.4% in the number of per capita miles driven.
+  
+  - What month demonstrated the largest increase in driving? How much, in percentage terms, higher was this driving? 
+  
+  > January had the highest increase in driving, increasing by approximately 5.3% in the number of per capita miles driven. If we confine our search to only those times after most lockdowns came into effect around the US, Jan 2023 showed the smallest decrease with per capita miles running only at approximately -0.5% compared with Jan 2018. 
+  
+Now, use these changes in driving to make forecasts from your models. 
+
+- Suppose that the number of miles driven per capita increased by as much as the COVID boom. Using the FE estimates, what would the consequences be on the number of traffic fatalities? Please interpret the estimate.
+
+  > The coefficients of the FE model were derived on annual data so in order to apply these to monthly data we need to multiply the chnage in monthly per capita miles driven by 12. As such, the increase of 41.6 per capita miles driven (between Jan 2018 and Jan 2020) scales us up a deficit of approximately 500 miles on an annualized basis. The effect that difference when scaled to an entire year would result in approximtely 0.47 additional traffic fatalities per 100k residents. This is obviously for a single month just prior to the commencement of lockdowns across the US, so if we were to have used this as a predictor in Jan, 20202 we would have drastically overestimated the fatality rate. This has financial implications as, if these forecasts are used for planning purposes, they could result in a singificant misallocation of resources (first responders/insurance/etc.).
+
+- Suppose that the number of miles driven per capita, decreased by as much as the COVID bust. Using the FE estimates, what would the consequences be on the number of traffic fatalities? Please interpret the estimate.
+
+  > As before, the coefficients of the FE model were derived on annual data so in order to apply these to monthly data we need to multiply the chnage in monthly per capita miles driven by 12. The monthly negative difference of 337.3 per capita miles driven (between April 2018 and April 2020) scales up to a deficit of 4,048 miles on an annualized basis. Mutliplying by the FE coefficient of 9.319782e-04, we would expect a reduction of approximately 3.8 in the fatality rate. This drop in the amount vehicle miles is an extreme outlier and is well outside of the standard variance in this variable, meaning that we cannot blindly apply the model coefficients to predict the impact of such an extreme effect. 
+
+# (5 points) Evaluate Error 
+
+If there were serial correlation or heteroskedasticity in the idiosyncratic errors of the model, what would be the consequences on the estimators and their standard errors? Is there any serial correlation or heteroskedasticity? 
+
+> If there was serial correlation or heteroskedasticity, the estimators may be biased or inefficient and the standard errors may be incorrectly estimated.
+
+```{r Best Model tests, echo = FALSE, results = 'latex'}
+pcdtest(mod.fix, test ='lm')
+pdwtest(mod.fix)
+pbgtest(mod.fix, order=2)
+```
+
+> From the tests above, reject the null hypothesis of homoskedasticity in the fixed effect model from the Breusch-Pagan test, and  we reject the null hypothesis of the Dubin-Watson test which implies there is serial correlation in the fixed effect model. We get a similar result when we run the Breusch-Godfrey/Woolridge test.
+
+```{r Best Model errors, echo = FALSE, results = 'latex'}
+reg.se <- coef(summary(mod.fix))[1,2]
+
+het.se <- sqrt(vcovHC(mod.fix, method="white1", type="HC0")[1,1])
+  
+cluster.se <- sqrt(vcovHC(mod.fix, method="white2", type="HC0")[1,1])
+  
+nw.se <- sqrt(vcovNW(mod.fix, type="HC0", maxlag=1)[1,1])
+
+arrellano.se <- sqrt(vcovHC(mod.fix, method="arellano", type="HC0")[1,1])
+```
+
+```{r}
+data.frame(
+  "Type" = c("Regular OLS", "Robust", "Cluster Robust", "Newey West", "Arrellano"),
+  "SE" = c(reg.se, het.se, cluster.se, nw.se, arrellano.se)
+)
+```
+> Our model is heteroskedastic and has serial correlation, we would suggest the Arrellano standard errors as the most robust. 
+
