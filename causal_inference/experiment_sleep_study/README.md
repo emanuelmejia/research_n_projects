@@ -1,4 +1,8 @@
-# Data description
+# Effects of Reducing Visible Light on Sleep Quality
+
+We ran an experiment to answer the following research question: “Does reducing exposure to visible light one hour before bedtime have an impact on sleep quality?” where subjects experienced both control and treatment phases. They were randomly assigned to either complete the control or treatment phase first, where treatment involved wearing sunglasses one hour before sleeping to assess visible light’s impact on sleep quality. No statistically significant effect was found.
+
+## Data description
 
 **timezone** = datetime object; participant's primary timezone
 
