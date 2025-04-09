@@ -44,15 +44,15 @@ library(kableExtra)
 \setcounter{page}{1}
 ## Motivation 
 <!-- Dataset with the most, or each in turn - can check for duplicates between all variants --> 
-Professional sports teams often create Facebook pages as a way to build community, advertise, and keep their fans in the loop. Facebook is the largest social network in the world with an annual revenue of approximately $117 billion, with 97.5% generated from the advertisement sales\footnote{Meta's (formerly Facebook Inc.) annual revenue from 2009 to 2021: https://www.tinyurl.com/3sruyj2f}. Posts made by these organizations are the primary way of communicating to their audience. Our aim is to investigate how specific attributes of the post, Facebook page, and organization affect engagement on each post. The data set to be analyzed comes from UC Irvine’s Machine Learning Repository, and has scraped information from 2,770 pages, 57,000 posts, and 4,120,532 comments. 
+Professional sports teams often create Facebook pages as a way to build community, advertise, and keep their fans in the loop. Facebook is the largest social network in the world, generating an annual revenue of approximately $117 billion, of which 97.5% comes from advertisement sales.\footnote{Meta's (formerly Facebook Inc.) annual revenue from 2009 to 2021: https://www.tinyurl.com/3sruyj2f}. Posts made by these organizations are the primary way of communicating to their audience. Our objective is to investigate the impact of specific attributes of the post, Facebook's page, and organization on engagement levels for each post. The data set to be analyzed comes from UC Irvine’s Machine Learning Repository, and has scraped information from 2,770 pages, 57,000 posts, and 4,120,532 comments. 
 
 
 ## Research Question
 For this project we’ll refer to **engagement** as the number of comments made on a post in the 24 hour period after it was published on Facebook. Our research question is as follows:
 
-_how is user engagement on the Facebook platform affected by post length while controlling for other variables such as post date, post share counts, page category, and page popularity?_
+_How is user engagement on the Facebook platform affected by post length while controlling for other variables such as post date, post share counts, page category, and page popularity?_
 
-The approach to operationlize this study is discussed in detail in the **Research Design** section of this report. Our results and processes are explained explicitly throughout our paper, and we provide a recommendation to changes to the Facebook platform that can lead to greater user engagement. Keeping in mind that user engagement is complex in nature in the world's largest social media platform, we also discuss the limitations of our approach and the steps we took to mitigate these effects.
+The approach to operationlize this study is discussed in detail in the **Research Design** section of this report. Our results and processes are explained explicitly throughout our paper, and we provide a recommendation for changes to the Facebook platform that could increase user engagement. Keeping in mind that user engagement is inherently complex on the world’s largest social media platform, we also discuss the limitations of our approach and the steps we took to mitigate these effects.
 
 # Data and Methodology 
 ## About the Data  
@@ -96,7 +96,7 @@ dataset <- dataset %>%
 
 ```
 
-The data set to be analyzed is the [“Facebook Comment Volume Dataset Data Set”](https://archive.ics.uci.edu/ml/datasets/Facebook+Comment+Volume+Dataset\#). The initial data set includes `r initial_dataset_features` features and `r initial_dataset_rows` records. We narrow down the feature set to the following variables of interest\footnote{Full features list avaialable at https://archive.ics.uci.edu/ml/datasets/Facebook+Comment+Volume+Dataset\#}:
+The data set to be analyzed is the "[Facebook Comment Volume Dataset](https://doi.org/10.24432/C5Q886.)"\footnote{Singh, K. (2015). Facebook Comment Volume [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5Q886.}, which includes `r initial_dataset_features` features and `r initial_dataset_rows` records. We narrow down the feature set to the following variables of interest\footnote{Full features list avaialable at https://archive.ics.uci.edu/ml/datasets/Facebook+Comment+Volume+Dataset\#}:
 
 \begin{center}
 $\textbf{Table 1. Data Description}$
@@ -178,7 +178,7 @@ dataset_sports_teams_rows <- nrow(dataset_sports_teams)
 
 ```
 
-There are five variants of the data set, each scraped at a different time. For convenience in analysis and data exploration, we merge the five data sets and add a new variable to indicate the source variant for each record. We wrangle the data to reduce the 14 binary features indicate the days of the week the posts were published and scraped into two features, "Day Published" and "Base Day". We then created two binary features indicating where the new features were weekends (Saturday or Sunday) or not. The added variables include:
+There are five variants of the data set, each scraped at a different time. For convenience in analysis and data exploration, we merge the five data sets and add a new variable to indicate the source variant for each record. We wrangle the data to consolidate the 14 binary features, which represent the days of the week when posts were published and scraped, into two aggregated features: "Day Published" and "Base Day". We then created two binary features to indicate whether these newly created features correspond to weekends (Saturday or Sunday) or weekdays. The added variables include:
 
 \begin{center}
 $\textbf{Table 2. Additional Features}$
@@ -187,11 +187,11 @@ $\textbf{Table 2. Additional Features}$
 |Additional Features          |Description                                |
 |:------                      |:----------                                |
 |Day Published                |Day of the week the post was published     |
-|Post Length (Intervention)   |Day of the week the post data was scraped  |
-|Published Weekend            |Binary value indicating if post was published on the weekend   |
-|Base Weekend                 |Binary value indicating if post data was scraped on a weekend  |
+|Day Base                     |Day of the week the post data was scraped  |
+|Published Weekend            |Post was published on the weekend          |
+|Base Weekend                 |Post data was scraped on a weekend         |
 
-We are looking to create a model that explains levels of engagement 24 hours after a post is published. Therefore, we filter our dataset to remove all posts that are less than 24 hours old. Keeping records for posts published less than 24 before data was collected would skew the CC4 variable (number of comments in the last 24 hours since post was published), as we would be potentially comparing the number of comments for some posts that had 24 hours to accrue comments, with others that had only 2 for example. 
+We aim to develop a model that explains engagement levels 24 hours after a post is published. Therefore, we filter our dataset to exclude posts that are less than 24 hours old since retaining them would skew the CC4 variable (number of comments in the last 24 hours since post was published), as we would be potentially comparing some posts that had a full 24 hours to accumulate comments and others that may have only had a few hours, leading to inconsistent data. 
 
 ```{r Split EDA explore and test sets, warning=FALSE, render=FALSE, echo=FALSE, error=FALSE, results='hide', message=FALSE}
 #Take a sample of the dataset_sports_teams for exploration
@@ -201,11 +201,11 @@ dataset_eda <- slice_sample(dataset_sports_teams, prop = data_prop, replace = FA
 dataset_eda_rows <- dataset_eda %>% nrow()
 ```
 
-We then subset our data to include only those where the category variable includes the term "Professional Sports Team". This reduces the total volume of our data set to `r dataset_sports_teams_rows` records. We further subset this, taking a `r data_prop * 100`% sub sample to perform our explanatory data analysis (EDA).
+We then filter our data to include only records where the category variable contains the term "Professional Sports Team". This reduces the dataset to a total of `r dataset_sports_teams_rows` records. Additionally, we take a `r data_prop * 100`% random sample of the data to perform our explanatory data analysis (EDA).
 
 ## Data exploration
 
-We start our data exploration by looking at the distribution of our variables of interest as shown in Image 1.
+We start our data exploration by looking at the distribution of our variables of interest, as shown in Image 1.
 
 \newpage
 \begin{center}
@@ -349,10 +349,10 @@ DayPublish_hist
 
 ```
 
-We have two findings in our initial exploration:
+This initial analysis yields two key findings:
 
 ### Skew of the data
-We notice that the distributions are highly skewed to the left for Comments (CC4, our response variable), Post Length, Post Shares, Page likes, and Page talking about. This is especially the case for the Comments (CC4), Post Length, and Post Shares features where it appears that there is a large cluster around the 0 value. We count the number of zeros in our sub exploration data sample for each feature to confirm this.
+We notice that the distributions of five variables are highly skewed to the left. This is especially evident for the Comments (CC4, our response variable), Post Length, and Post Shares features, where a large cluster appears around the 0 value. To confirm this, we count the number of zeros in our sub-sample of the exploration data for each feature.
 
 ```{r EDA_Count_0s_for_each_feature, warning=FALSE, render=FALSE, echo=FALSE, error=FALSE, results='hide', message=FALSE}
 n_zero_CC4_dataset_eda <- dataset_eda %>% filter(CC4 == 0) %>% nrow()
@@ -373,7 +373,7 @@ $\textbf{Table 3. Proportion of Zeroes}$
 |Page Talking About   |`r round(n_zero_Pagetalkingabout_dataset_eda/dataset_eda_rows, 2)*100`%    |
 |Post Share Count     |`r round(n_zero_PostShareCount_dataset_eda/dataset_eda_rows, 2)*100`%      |
 
-We find that `r round(n_zero_CC4_dataset_eda/dataset_eda_rows, 2)*100`% of the Facebook posts in our sample have no comments. The skew in our feature distributions suggests that variable transformations may be useful in modeling and interpretation of our data. A natural log transformation seems appropriate given the shape of our distributions. We choose to remove the zero values from our sample, as we would not be able to apply the same transformation to them.
+We find that `r round(n_zero_CC4_dataset_eda/dataset_eda_rows, 2)*100`% of the Facebook posts in our sample have no comments. The skewness in our feature distributions suggests that variable transformations may be beneficial for both modeling and interpretation. A natural logarithm transformation seems appropriate given the shape of our distributions. However, since this transformation cannot be applied to zero values, we opt to remove them from our sample.
 
 ```{r Remove zero values, warning=FALSE, render=FALSE, echo=FALSE, error=FALSE, results='hide', message=FALSE}
 # Remove values from EDA dataset
@@ -386,9 +386,9 @@ dataset_sports_teams <- dataset_sports_teams %>% filter(!CC4 == 0) %>% filter(!P
 dataset_sports_teams_rows <- dataset_sports_teams %>% nrow()
 ```
 
-This further reduces our sample size down to `r dataset_sports_teams_rows` comments.
+This further reduces our sample size down to `r dataset_sports_teams_rows` records.
 
-We apply natural log transformations to our comments, page likes, page likes, page talking about, post length, and post shares features. The resulting distributions can be found below in Image 2.
+The resulting distributions of applying natural logarithm transformations to our Comments, Page Likes, Page Talking About, Post Length and Post Shares features can be found below in Image 2.
 
 \begin{center}
 $\textbf{Image 2. Histograms of Transformed Variables}$
@@ -487,7 +487,7 @@ log_PostShare_hist
 
 ### Outliers in the Data
 
-The histograms above for the untransformed variables confirms that our data set contains several outliers that heavily skew our data. The features with outliers include CC4, Page Likes, Page Talking About, Post Length, and Post Shares which can make interpreting the coefficient of the variables more difficult once we have the results from the linear regressions. The boxplots below provide a representation on the quantile distributions of these outliers.
+The histograms above for the untransformed variables confirm that our dataset contains several outliers that heavily skew the data. The features with outliers include CC4, Page Likes, Page Talking About, Post Length, and Post Shares, which may complicate the interpretation of variable coefficients once we obtain results from the linear regressions. The boxplots below provide a representation on the quantile distributions of these outliers.
 
 \newpage
 \begin{center}
@@ -597,11 +597,11 @@ boxplot_pagetalkingabout
 boxplot_postshares
 ```
 
-The presence of these outliers in our outcome and explanatory variables suggests that we will perform additional statistical procedures such as Cook's Distance and Statistical Leverage during the modeling phase in order to take into account for the effect of outliers in our data. Performing these tests will also allow us to troubleshoot some of the potential issues that we will face in estimating the results from the Variance-Covariance matrix between the explanatory variables in each model in this study.
+The presence of these outliers in our outcome and explanatory variables indicates the need for additional statistical procedures, such as Cook's Distance and Statistical Leverage during the modeling phase to account for the influence of outliers in our data. Moreover, performing these tests will enable us to identify and address potential challenges in estimating the results from the Variance-Covariance matrix of the explanatory variables in each model used in this study
 
 
 ## Checking our intuitions
-Ahead of preparing our model, we have some assumptions regarding the relationships between our features and our outcome variable (post engagement, as measured by number of comments). Namely, we assume page likes, page talking about, and post shares to be positively correlated with the engagement. Here, we produce joint distribution plots between our outcome variable, and features of interest in Image 4. 
+Before constructing our model, we establish several assumptions regarding the relationships between our features and the outcome variable (post engagement, measured by the number of comments). Specifically, we assume that Page Likes, Page Talking About, and Post Shares are positively correlated with engagement. To explore these relationships, we produce joint distribution plots between our outcome variable, and features of interest in Image 4. 
 
 \begin{center}
 $\textbf{Image 4. Joint Distributions of Variables}$
@@ -689,13 +689,13 @@ PostShareCount_CC4_distr
 
 ```
   
-Adding a regression line through our joint distributions provides some support for our intuitions. We see a positive gradient for page likes, page talking about, and post shares feature. 
+Adding a regression line to our joint distribution plots provides empirical support for our assumptions. Specifically, we observe a positive gradient for the Page Likes, Page Talking About, and Post Shares features. 
 
 
 # Research Design
-This will be a quantitative, retrospective analysis of engagement of Facebook posts. _We operationalize the concept of engagement as the number of comments contributed to a Facebook post. The aim of our design will be to produce an explanatory model for engagement_. Our target will be to produce a result that can be shared with the product team at Facebook in order to make an update to, or around the functionality of the posts feature that will enhance engagement levels on the platform. For example, the finding that shorter posts drive more engagement may provide the rational for introducing character restrictions. Alternatively, different recommendations may be pushed to owners of different page categories nudging them on the direction of a more optimal post length. In our case, we focus on posts published on professional sports team pages.  
+This study adopts a quantitative, retrospective approach to analyze engagement in Facebook posts.. _We operationalize the concept of engagement as the number of comments contributed to a Facebook post. The aim of our design will be to produce an explanatory model for engagement_. Our target will be generating insights to be shared with the product team at Facebook in order to make an update to, or around the functionality of the posts feature to increase user interaction on the platform. For example, if the analysis reveals that shorter posts generate more engagement, this could justify the implementation of character limits. Alternatively, the platform could deliver tailored recommendations to page owners based on their page category, nudging them toward an optimal post length. This analysis is focused on posts published by professional sports team pages. 
 
-We first conceptualize a causal theory for the engagement level of a post during the last 24 hours relative to when the post was initially published. We consider the number of comments that a post receives as our metric for product success. Our causal theory states that the length of a Facebook post affects the number of comments within the next 24 hours while controlling for other variables such as post share count, page popularity and the base time at which the post was published relative to when the data was collected. Considering the variables that we believe to impact engagement as represented by the number of comments that a post receives, we form the following structural model:
+We first conceptualize a causal theory for the engagement level of a post  within the first 24 hours of its publication. We consider the number of comments that a post receives as our metric for product success. Our causal theory states that the length of a Facebook post affects the number of comments within the next 24 hours while controlling for confounding variables such as Post Share Count, Page Popularity and the Base Time at which the post was published relative to when the data was collected. Based on this theoretical framework and the variables identified as influential to post engagement, we construct the following structural model:
 
 ![Structural Model for Facebook Post Engagement.](../diagrams/diagram_2.png)
 
@@ -708,11 +708,13 @@ $$
 \end{aligned}
 $$
  
-We start with an exploration of the data, checking the joint distributions of each causal variable with our outcome variable. Following an initial assessment to validate our assumptions, we  perform transformations for our variables that may better model the impact on engagement. The source of the data set stems from a program written in Java and Facebook Query Language to scrape the pages, posts, and comments\footnote{Singh, Kamaljot. “Comment Volume Prediction using Neural Networks and Decision Trees.” International Conference on Modelling and Simulation, 2015, https://ijssst.info/Vol-16/No-5/paper16.pdf}. We use the Ordinary Least Squares Regression to produce our model of the data, and validate the assumptions required. We plan to include in our model a number of control features, which we do not believe to have a direct causal effect on our outcome variable, but may be associated with levels of engagement. During the modeling stage of the project, ANOVA F-Tests will be conducted to assess the efficacy of adding additional variables to the model to determine how successful the Facebook platform is in terms of number of comments which is the engagement metric we wish to analyze. We will do this process to develop at least three models:  
+We start with an exploration of the data, checking the joint distributions of each causal variable with our outcome variable. This initial assessment allows us to validate our assumptions and, where appropriate, apply transformations to better capture the relationship between explanatory variables and engagement. The source of the data set stems from a program written in Java and Facebook Query Language to scrape the pages, posts, and comments\footnote{Singh, Kamaljot. “Comment Volume Prediction using Neural Networks and Decision Trees.” International Conference on Modelling and Simulation, 2015, https://ijssst.info/Vol-16/No-5/paper16.pdf}. We employ the Ordinary Least Squares Regression to produce our model of the data, and validate the assumptions required. Our strategy includes the use of control variables we do not believe to have a direct causal effect on engagement, but may still be correlated the outcome. 
+During the modeling stage, we will also conduct ANOVA F-Tests to assess the efficacy of adding additional variables to the model. This will help us determine whether including more features significantly improves model fit and explanatory power in predicting comment volume. We aim to develop progressively complex models, using the following structure:  
 
-1. The base model where we regress the number of comments on the post length alone.
-2. A model where we regress the number of comments on all of the desired covariates (control as well as causal variables).
-3. A third model where we add interaction terms for our covariates.
+1. *Base Model:* A simple regression of the number of comments on post length alone.
+2. *Controlled Model:* Regression models including all relevant variables defined as probably causal to engagement.
+3. *Full Model:* Regression models including all relevant variables, encompassing both causal and control variables.
+4. *Interaction Model* An extension of the full model that incorporates interaction terms to explore whether combinations of variables have a compounded effect on engagement.
 
 \newpage
 # Modeling
@@ -723,7 +725,7 @@ dataset_model <- setdiff(dataset_sports_teams, dataset_eda)
 
 
 ## Base Model
-Our first model will regress our outcome variable on our treatment variable alone.  
+Our first and simplest model will regress our outcome variable on our treatment variable alone.
 
 $$
 \text{Model 1}: ln(\text{Comments}) = \beta_0 + \beta_1 ln(\text{PostLength}) + \varepsilon
@@ -759,7 +761,8 @@ Postlength_CC4_base_model
 
 
 
-The resulting plots below show the results with Cook's distance to remove the outliers on the base model. In the plot shown below, the results from the Cook's distance plot indicate the values above a Cook's Distance of 0.00050 are highly influential outliers. Using these influential values, we will remove the outliers from the data set.
+The plots below illustrate the results of applying Cook’s Distance to detect and remove influential outliers from the base model. Observations with a Cook’s Distance greater than 0.00050 were identified as having a disproportionately large influence on the regression results. These values were flagged as outliers and subsequently excluded from the dataset to improve model accuracy and ensure a more robust estimation.
+
 ```{r Cooks Distance 1, warning=FALSE, render=FALSE, echo=FALSE, error=FALSE, message=FALSE, out.width= "80%", fig.align='center'}
 
 # Cook's Distance calculation
@@ -789,7 +792,7 @@ ggplot(base_model, aes(seq_along(.cooksd), .cooksd)) +
 ```
 
 
-The plots for the Statistical Leverage on the base model indicate that none of the values are greater than 2. Since the threshold for Statistical Leverage has been set at 2, and none of the observations are greater than 2, then none of the observations will be removed using the Statistical Leverage approach.
+The plots analyzing Statistical Leverage for the base model indicate that none of the values exceed the predefined threshold of 2. Since all leverage values fall below this cutoff, no data points are identified as having an unusually large influence on the model due to their position in the predictor space. As a result, no observations will be removed based on the Statistical Leverage criterion.
 
 ```{r Statistical Leverage on Base Model, warning=FALSE, render=FALSE, echo=FALSE, error=FALSE, message=FALSE, out.width= "80%", fig.align='center'}
 # Calculate leverage for each observation in the model
@@ -799,7 +802,7 @@ hats <- as.data.frame(hatvalues(base_model))
 # hats
 
 # Sort observations by leverage, descending
-hats_sorted <- hats[order(-hats['hatvalues(base_model)']), ]
+# hats_sorted <- hats[order(-hats['hatvalues(base_model)']), ]
 
 # Plot Statistical Leverage
 #plot leverage values for each observation
@@ -832,11 +835,12 @@ dataset_model1_no_outliers <- dataset_model[-influential, ]
 ```
 
 
-## Second Model
-In the second model, we include a number of control variables that we believe to have a causal link with the number of comments generated (our response): 
-1. Page Likes: We expect that the more likes a page has, the more comments posts on that page will receive 
-2. Page Talking About: We expect a positive relationship between the number of users that interact with a page, and the engagement on the posts on that page 
-3. Post Shares: We expect that the more times a post has been shared, the more comments it will receive 
+## Controlled Model
+In our second model, we introduce a set of control variables that are hypothesized to have a causal influence on the number of comments (our response), in an effort to isolate the effect of post length (our main treat variable):
+
+1. Page Likes: A higher number of page likes is expected to correlate positively with the number of comments.
+2. Page Talking About: A higher number of page likes is anticipated to correlate positively with the number of comments on that page.
+3. Post Shares: Posts that are shared more frequently are likely to present a higher number of comments
 
 The second model is evaluated as follows:  
 
@@ -853,7 +857,7 @@ model_2 = lm(log_CC4 ~ log_Postlength + log_PageTalkingAbout + log_PageLikes + l
 # model_2$coefficients
 ```
 
-For Model 2, the resulting plots below show the results with Cook's distance to remove the outliers. The results from the Cook's distance plot indicate that values above a Cook's Distance of 0.0020 are highly influential outliers. Using these influential values, we will remove the outliers from the data set based on the results from the second model.
+For this second model, the plots below illustrate the application of Cook's distance to identify and remove influential outliers. The analysis indicates that observations with a Cook's Distance greater than 0.0020 are considered highly influential and may disproportionately affect the model’s estimates. Consequently, these data points will be excluded from the dataset to enhance the robustness and reliability of the model’s inferences.
 
 ```{r Cooks Distance 2, warning=FALSE, render=FALSE, echo=FALSE, error=FALSE, message=FALSE, out.width= "80%", fig.align='center'}
 
@@ -884,7 +888,7 @@ ggplot(model_2, aes(seq_along(.cooksd), .cooksd)) +
 
 ```
 
-The plots for the Statistical Leverage on Model 2 indicate that none of the values are greater than 2. Since the threshold for Statistical Leverage has been set at 2, and none of the observations are greater than 2, then none of the observations will be removed using the Statistical Leverage approach.
+The plots analyzing Statistical Leverage reveal that none of the observations exceed the predetermined threshold of 2. As a result, no data points will be excluded based on leverage. This suggests that all observations fall within an acceptable range of influence regarding their position in the predictor space, and thus, they do not unduly distort the estimation of the model coefficients.
 
 ```{r Statistical Leverage on Model 2, warning=FALSE, render=FALSE, echo=FALSE, error=FALSE, message=FALSE, out.width= "80%", fig.align='center'}
 # Calculate leverage for each observation in the model
@@ -894,7 +898,7 @@ hats <- as.data.frame(hatvalues(model_2))
 # hats
 
 # Sort observations by leverage, descending
-hats_sorted <- hats[order(-hats['hatvalues(model_2)']), ]
+# hats_sorted <- hats[order(-hats['hatvalues(model_2)']), ]
 
 # Plot Statistical Leverage
 #plot leverage values for each observation
@@ -927,12 +931,12 @@ dataset_model2_no_outliers <- dataset_model[-influential, ]
 ```
 
 
-## Third Model
-For our third model, we include an additional variables of when the post was published. We do not draw a direct causal link between the day a post was published, but expect that engagement levels on Facebook may vary by day of the week. The additional variables are: 
-1. Post Age (Basetime): We expect the age of a post to impact the number of comments it generates 
-2. Weekend: Whether the post was published on a weekend or not  
+## Full Model
+For our third model, we expand our analysis by adding additional variables related to the timing of the post's publication, allowing us to further refine our model and gain deeper insights. 
+While we do not assert a direct causal relationship between the time of publication and engagement, we hypothesize that engagement levels may vary based on the day of the week. The additional variables included are: 
 
-
+1. Post Age (Basetime): We expect that the age of a post will affect the number of comments.
+2. Weekend: This variable indicates whether the post was published on a weekend or not. We hypothesize that posts published on weekends may generate different engagement levels.
 
 Our third model is evaluated as follows:
 $$
@@ -948,8 +952,7 @@ model_3 = lm(log_CC4 ~ log_Postlength + log_PageTalkingAbout + log_PageLikes + l
 # model_3$coefficients
 ```
 
-
-For Model 3, the plots below show the results with Cook's distance to remove the outliers. The results from this Cook's distance plot indicate that values above a Cook's Distance of 0.00025 are highly influential outliers. Using these influential values, we will remove the outliers from the data set based on the results from the third model.
+For this third model, the plots below illustrate the application of Cook's distance to identify and remove influential outliers. The analysis indicates that observations with a Cook's Distance greater than 0.00025 are considered highly influential and may disproportionately affect the model’s estimates. Consequently, these data points will be excluded from the dataset to enhance the robustness and reliability of the model’s inferences.
 
 ```{r Cooks Distance 3, warning=FALSE, render=FALSE, echo=FALSE, error=FALSE, message=FALSE, out.width= "80%", fig.align='center'}
 
@@ -980,7 +983,7 @@ ggplot(model_3, aes(seq_along(.cooksd), .cooksd)) +
 ```
 
 
-The plots for the Statistical Leverage on Model 3 indicate that none of the values are greater than 2. Since the threshold for Statistical Leverage has been set at 2, and none of the observations are greater than 2, then none of the observations will be removed using the Statistical Leverage approach.
+The plots analyzing Statistical Leverage reveal that none of the observations exceed the predetermined threshold of 2. As a result, no data points will be excluded based on leverage. 
 
 ```{r Statistical Leverage on Model 3, warning=FALSE, render=FALSE, echo=FALSE, error=FALSE, message=FALSE, out.width= "80%", fig.align='center'}
 # Calculate leverage for each observation in the model
@@ -990,7 +993,7 @@ hats <- as.data.frame(hatvalues(model_3))
 # hats
 
 # Sort observations by leverage, descending
-hats_sorted <- hats[order(-hats['hatvalues(model_3)']), ]
+# hats_sorted <- hats[order(-hats['hatvalues(model_3)']), ]
 
 # Plot Statistical Leverage
 #plot leverage values for each observation
@@ -1022,14 +1025,14 @@ dataset_model3_no_outliers <- dataset_model[-influential, ]
 
 ```
 
-## Fourth model
-Our final model includes interaction terms for features that we believe to be related. We include interaction terms for:
+## Interaction Model
+In our final model, we incorporate interaction terms to explore the relationships between variables that may work together to produce different effects on the number of comments. The following interaction terms are included:
 
-1. Post share count and the post age (Basetime variable): We expect that the duration of a post's presence on a page will impact the number of comments it generates. 
-2. We expect that there is some interaction between the number of likes a page has (a proxy for page popularity) and the number of people that interact with that page (page talking about). It would be reasonable to assume that the more popular a page is, the more frequently it is visited. 
-3. Post length and Weekend, as we may assume that posting behavior varies on the weekend as compared with weekdays. 
+1. Post Share Count and Post Age (Basetime): We expect that the duration of a post’s presence on a page, combined with its share count, will have an impact on the number of comments it generates. 
+2. Page Likes and Page Talking About: We anticipate an interaction between the number of likes a page has (a proxy for popularity) and the number of people interacting with the page (i.e., "page talking about").
+3. Post Length and Weekend: We hypothesize that posting behavior, in terms of post length, may differ on weekends compared to weekdays. 
 
-So our fourth and final model is:
+Therefore, our fourth and final model is:
 $$
 \begin{aligned}
     \text{Model 4}: ln(\text{Comments}) = \beta_0 &+ \beta_1 ln(\text{PostLength}) + \beta_2 ln(\text{PageTalkingAbout}) + \beta_3 ln(\text{PageLikes})\\
@@ -1045,8 +1048,7 @@ model_4 = lm(log_CC4 ~ log_Postlength + log_PageTalkingAbout + log_PageLikes + l
 # model_4$coefficients
 ```
 
-
-Lastly, the plot below show the results with Cook's distance to remove the outliers based on the regression of model 4. The results from the Cook's distance plot indicate the values above a Cook's Distance of 0.0015 are highly influential outliers. Using these influential values, we will remove the outliers from the data set based on the results from the fourth model.
+For this final model, the plots below illustrate the application of Cook's distance to identify and remove influential outliers. The analysis indicates that observations with a Cook's Distance greater than 0.0015 are considered highly influential outliers and so, these data points will be excluded to enhance the robustness and reliability of the model’s inferences.
 
 ```{r Cooks Distance 4, warning=FALSE, render=FALSE, echo=FALSE, error=FALSE, message=FALSE, out.width= "80%", fig.align='center'}
 
@@ -1076,7 +1078,7 @@ ggplot(model_2, aes(seq_along(.cooksd), .cooksd)) +
   ) 
 ```
 
-The plots for the Statistical Leverage on Model 4 indicate that none of the values are greater than 2. Since the threshold for Statistical Leverage has been set at 2, and none of the observations are greater than 2, then none of the observations will be removed using the Statistical Leverage approach.
+Once again, the plots analyzing Statistical Leverage reveal that none of the observations exceed the predetermined threshold of 2. As a result, no data points will be excluded based on leverage. 
 
 ```{r Statistical Leverage on Model 4, warning=FALSE, render=FALSE, echo=FALSE, error=FALSE, message=FALSE, out.width= "80%", fig.align='center'}
 # Calculate leverage for each observation in the model
@@ -1086,7 +1088,7 @@ hats <- as.data.frame(hatvalues(model_4))
 # hats
 
 # Sort observations by leverage, descending
-hats_sorted <- hats[order(-hats['hatvalues(model_4)']), ]
+# hats_sorted <- hats[order(-hats['hatvalues(model_4)']), ]
 
 # Plot Statistical Leverage
 #plot leverage values for each observation
@@ -1119,7 +1121,7 @@ dataset_model4_no_outliers <- dataset_model[-influential, ]
 ```
 
 
-Taking the variance covariance matrix of our final model in Table 4, we note that the variance of the coefficients is close zero (also see standard errors in results section). This makes us skeptical of the results of the model. We experiment with a smaller sample size to check the effects of sample size on the variances, however we find similar results even when reducing the sample size to 30% of the total. We also attempt to remove zero values and outliers from our models, but the results in the variances remain near zero. We note that this result requires further investigation.  
+Taking the variance-covariance matrix of our final model (Table 4), we observe that the variance of the coefficients is near zero, which raises concerns about the reliability of the model’s results (this is also evident from the standard errors in the results section). To better understand this, we conduct experiments with smaller sample sizes, reducing the dataset to 30% of the original total, but find similar patterns in the variance of the coefficients. Additionally, we attempt to remove zero values and outliers from our dataset, yet the variances remain close to zero. These findings suggest that there may be underlying issues that require further investigation. It is important to explore whether this result is due to data quality, or some other factor that may be influencing the variance of the estimates.
 
 ```{r Coef Variance, warning=FALSE, render=FALSE, echo=FALSE, error=FALSE, message=FALSE, out.width= "80%", results="asis"}
 #vcovHC(model_4) %>% round(digits = 3)
@@ -1369,6 +1371,6 @@ Our research paper investigated changes to a product we have defined as the Face
 
 - We find the length of a post to be statistically significant across the 4 different models.
 - Our model 4 was chosen as the preferred model after running ANOVA F-Tests. This model provides evidence that a 1% increase in the post length leads to an average increase of 0.036% in the number of comments that this post receives 24 hours after it has been published while holding everything else constant.
-- Due to Facebook's global reach engaging billions of daily users, we find that the find can find a practically significant effect because marginal increases in the length of a Facebook post can lead to higher engagement even if the statistical values are small percentage values.
+- Due to Facebook's global reach engaging billions of daily users, we find a practically significant effect because marginal increases in the length of a Facebook post can lead to higher engagement even if the statistical values are small percentage values.
 - Due to the limitations of the model in terms of promoting content and controlling for user features such as location and age, we suffer from Omitted Variable Bias that limit the interpretations of our model.
 - Future research in this area needs to control for zero inflated Poisson regressions which can lead to zero covariances between the coefficients in our model.
